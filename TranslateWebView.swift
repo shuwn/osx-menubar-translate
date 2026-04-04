@@ -6,63 +6,127 @@
 //  Copyright © 2024 Adrian Moreno Peña. All rights reserved.
 //
 
+import Cocoa
 import WebKit
 
 class TranslateWebView: WKWebView {
 
-    override var acceptsFirstResponder: Bool { return true }
+    override var acceptsFirstResponder: Bool { true }
+
     override func becomeFirstResponder() -> Bool {
-        return true
+        true
     }
-    
+
+    override func resignFirstResponder() -> Bool {
+        true
+    }
+
     override func keyDown(with event: NSEvent) {
-        NSLog("keyDown translateWebView: " + (event.characters ?? "") )
-        
-        switch event.modifierFlags.intersection(.deviceIndependentFlagsMask) {
+        NSLog("TranslateWebView keyDown: " + (event.characters ?? ""))
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        switch flags {
         case [.command] where event.characters == "c":
-            self.copy(event)
+            copy(nil)
+            return
+
         case [.command] where event.characters == "v":
-            self.paste(event)
+            paste(nil)
+            return
+
         case [.command] where event.characters == "a":
-            self.selectAll(event)
+            selectAll(nil)
+            return
+
         default:
-            break
+            super.keyDown(with: event)
         }
-        
-        super.keyDown(with: event)
     }
-    
-    public func keyPress(event: NSEvent){
+
+    func keyPress(event: NSEvent) {
         super.keyDown(with: event)
     }
 
-    
     @IBAction override func selectAll(_ sender: Any?) {
-        NSLog("Select all");
-        super.selectAll(sender)
+        NSLog("TranslateWebView: selectAll")
+
+        let javascript = """
+        (function() {
+            const active = document.activeElement;
+            if (active && typeof active.select === 'function') {
+                active.select();
+                return 'selected_input';
+            }
+
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(document.body);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return 'selected_document';
+        })();
+        """
+
+        evaluateJavaScript(javascript) { _, error in
+            if let error = error {
+                NSLog("TranslateWebView selectAll error: \(error.localizedDescription)")
+            }
+        }
     }
 
-    
     @IBAction func copy(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        
-        
-        let script = "window.getSelection().toString()";
-        self.evaluateJavaScript(script){ selectedText, error in
-            pasteboard.setString(selectedText as! String, forType: .string)
+
+        let script = """
+        (function() {
+            const active = document.activeElement;
+            if (active && typeof active.value === 'string') {
+                const start = active.selectionStart ?? 0;
+                const end = active.selectionEnd ?? 0;
+                return active.value.substring(start, end);
+            }
+            return window.getSelection().toString();
+        })();
+        """
+
+        evaluateJavaScript(script) { selectedText, error in
+            if let error = error {
+                NSLog("TranslateWebView copy error: \(error.localizedDescription)")
+                return
+            }
+
+            if let selectedText = selectedText as? String {
+                pasteboard.setString(selectedText, forType: .string)
+            }
         }
     }
 
     @IBAction func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
-        if let copiedString = pasteboard.string(forType: .string) {
-            // Use the copied string
-            print("Pasted: \(copiedString)")
-            let javascript = "document.execCommand('insertText', false, '\(copiedString)');"
-            self.evaluateJavaScript(javascript, completionHandler: nil)
+        guard let copiedString = pasteboard.string(forType: .string) else { return }
+
+        let escaped = copiedString
+            .replacingOccurrences(of: "\\\\", with: "\\\\\\\\")
+            .replacingOccurrences(of: "'", with: "\\\\'")
+            .replacingOccurrences(of: "\n", with: "\\\\n")
+            .replacingOccurrences(of: "\r", with: "\\\\r")
+
+        let javascript = """
+        (function() {
+            const active = document.activeElement;
+            if (active) {
+                active.focus();
+            }
+            document.execCommand('insertText', false, '\(escaped)');
+        })();
+        """
+
+        evaluateJavaScript(javascript) { _, error in
+            if let error = error {
+                NSLog("TranslateWebView paste error: \(error.localizedDescription)")
+            }
         }
     }
-    
-    
 }

@@ -24,25 +24,25 @@ import Cocoa
 public class EventMonitor {
     private var monitor: AnyObject?
     private let mask: NSEvent.EventTypeMask
-    private let handler: (NSEvent?) -> ()
+    private let handler: (NSEvent?) -> Void
 
-    public init(mask: NSEvent.EventTypeMask, handler: @escaping (NSEvent?) -> ()) {
+    public init(mask: NSEvent.EventTypeMask, handler: @escaping (NSEvent?) -> Void) {
         self.mask = mask
         self.handler = handler
     }
 
     deinit {
-        self.stop()
+        stop()
     }
 
     public func start() {
-        self.monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler) as AnyObject?
+        guard monitor == nil else { return }
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler) as AnyObject?
     }
 
     public func stop() {
-        if self.monitor != nil {
-            NSEvent.removeMonitor(self.monitor!)
-            self.monitor = nil
-        }
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
     }
 }

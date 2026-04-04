@@ -24,94 +24,114 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
     @IBOutlet weak var statusMenu: NSMenu!
-    
+
     var statusItem: NSStatusItem!
     let popover = NSPopover()
     let translateViewController = TranslateViewController(nibName: "TranslateViewController", bundle: nil)
     var eventMonitor: EventMonitor?
-    
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("MenuTranslate: starting")
-        self.statusItem = NSStatusBar.system.statusItem(withLength: 32)
-        
+
+        statusItem = NSStatusBar.system.statusItem(withLength: 32)
+
         let image = NSImage(named: "TranslateStatusBarButtonImage")
         image?.isTemplate = true
-        
+
         if let button = statusItem.button {
             button.image = image
             button.action = #selector(statusItemButtonActivated(sender:))
-            
-            button.sendAction(on: [ .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp ])
+            button.sendAction(on: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp])
         }
-        
+
         popover.contentViewController = translateViewController
-        
+        popover.behavior = .applicationDefined
+
         eventMonitor = EventMonitor(mask: [.leftMouseDown, .rightMouseDown]) { [unowned self] event in
-            if self.popover.isShown {
-                self.closePopover(sender: event)
+            guard self.popover.isShown else { return }
+
+            if let clickedWindow = event?.window,
+               let popoverWindow = self.popover.contentViewController?.view.window,
+               clickedWindow == popoverWindow {
+                return
             }
+
+            self.closePopover(sender: event)
         }
-        
-        eventMonitor?.start()
-        
+
         NSApplication.shared.servicesProvider = self
         NSLog("MenuTranslate: started")
-
     }
-    
+
     @IBAction
     func statusItemButtonActivated(sender: AnyObject?) {
         let buttonMask = NSEvent.pressedMouseButtons
         var primaryDown = ((buttonMask & (1 << 0)) != 0)
         var secondaryDown = ((buttonMask & (1 << 1)) != 0)
-        
-        // Treat a control-click as a secondary click
-        if (primaryDown && (NSEvent.modifierFlags == NSEvent.ModifierFlags.control)) {
-            primaryDown = false;
-            secondaryDown = true;
+
+        if primaryDown && (NSEvent.modifierFlags == .control) {
+            primaryDown = false
+            secondaryDown = true
         }
-        
-        if (primaryDown) {
+
+        if primaryDown {
             if popover.isShown {
                 closePopover(sender: sender)
             } else {
                 showPopover(sender: sender)
             }
-        } else if (secondaryDown) {
+        } else if secondaryDown {
             statusItem.menu = self.statusMenu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
         }
     }
-    
-    func showPopover(sender: AnyObject?, keyword : String? = nil) {
-        if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: NSRectEdge.minY)
+
+    func showPopover(sender: AnyObject?, keyword: String? = nil) {
+        guard let button = statusItem.button else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        popover.behavior = .applicationDefined
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+        DispatchQueue.main.async {
+            if let window = self.popover.contentViewController?.view.window {
+                window.level = .normal
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+            }
+
+            self.translateViewController.focusInput()
         }
+
         eventMonitor?.start()
     }
-    
+
     func closePopover(sender: AnyObject?) {
         popover.performClose(sender)
         eventMonitor?.stop()
     }
-    
-    @objc func translateService(_ pasteboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
-        let text = pasteboard.string(forType: .string)
-        NSLog("MenuTranslate: handling service invocation: " + text!)
-        translateViewController.loadText(text: text!)
-        self.showPopover(sender: nil, keyword: text)
+
+    @objc
+    func translateService(_ pasteboard: NSPasteboard,
+                          userData: String,
+                          error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        guard let text = pasteboard.string(forType: .string) else { return }
+
+        NSLog("MenuTranslate: handling service invocation: " + text)
+        translateViewController.loadText(text: text)
+        showPopover(sender: nil, keyword: text)
     }
-    
-    @IBAction func quitApp(_ sender: Any) {
+
+    @IBAction
+    func quitApp(_ sender: Any) {
         NSApplication.shared.terminate(self)
     }
-    
-    
+
     @IBAction
     func aboutMenuActivated(sender: AnyObject?) {
         NSLog("MenuTranslate: opening github site")
-        NSWorkspace().open(URL(string: "https://github.com/zetxek/osx-menubar-translate")!)
+        NSWorkspace.shared.open(URL(string: "https://github.com/zetxek/osx-menubar-translate")!)
     }
-    
 }
