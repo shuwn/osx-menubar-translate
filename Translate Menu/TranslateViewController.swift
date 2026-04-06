@@ -32,10 +32,6 @@ class TranslateViewController: NSViewController, WKNavigationDelegate {
     var urlLoaded = false
     let defaultUrl = "https://translate.google.com?text="
 
-    private var focusRetryCount = 0
-    private let maxFocusRetryCount = 10
-    private var pendingFocusWorkItem: DispatchWorkItem?
-
     override func viewWillAppear() {
         super.viewWillAppear()
 
@@ -53,19 +49,7 @@ class TranslateViewController: NSViewController, WKNavigationDelegate {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        focusRetryCount = 0
-        focusInput()
-    }
-
-    override func viewWillDisappear() {
-        super.viewWillDisappear()
-        pendingFocusWorkItem?.cancel()
-        pendingFocusWorkItem = nil
-        focusRetryCount = 0
-    }
-
-    deinit {
-        pendingFocusWorkItem?.cancel()
+        focusInputIfPossible()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -73,9 +57,8 @@ class TranslateViewController: NSViewController, WKNavigationDelegate {
         progressIndicator.stopAnimation(nil)
         progressIndicator.isHidden = true
 
-        focusRetryCount = 0
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.focusInput()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.focusInputIfPossible()
         }
     }
 
@@ -99,35 +82,12 @@ class TranslateViewController: NSViewController, WKNavigationDelegate {
         return URLRequest(url: url)
     }
 
-    public func focusInput() {
+    public func focusInputIfPossible() {
         guard isViewLoaded else { return }
-
-        pendingFocusWorkItem?.cancel()
-        pendingFocusWorkItem = nil
-
-        guard view.superview != nil || view.window != nil else {
-            NSLog("TranslateViewController: focusInput aborted, view is not in active hierarchy")
-            return
-        }
-
         guard let window = view.window else {
-            guard focusRetryCount < maxFocusRetryCount else {
-                NSLog("TranslateViewController: focusInput retry limit reached")
-                return
-            }
-
-            focusRetryCount += 1
-
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.focusInput()
-            }
-
-            pendingFocusWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
+            NSLog("TranslateViewController: focusInputIfPossible skipped, window not ready")
             return
         }
-
-        focusRetryCount = 0
 
         window.level = .normal
         window.makeKeyAndOrderFront(nil)
@@ -139,6 +99,8 @@ class TranslateViewController: NSViewController, WKNavigationDelegate {
     }
 
     private func focusWebInputElement() {
+        guard view.window != nil else { return }
+
         let javascript = """
         (function() {
             const selectors = [

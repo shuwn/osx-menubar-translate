@@ -96,13 +96,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
         DispatchQueue.main.async {
-            if let window = self.popover.contentViewController?.view.window {
-                window.level = .normal
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-            }
+            guard let window = self.popover.contentViewController?.view.window else { return }
 
-            self.translateViewController.focusInput()
+            window.level = .normal
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+
+            self.translateViewController.focusInputIfPossible()
         }
 
         eventMonitor?.start()
